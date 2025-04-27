@@ -6,15 +6,17 @@ const router = Router();
 router.post('/', async (req, res) => {
   const { message } = req.body;
 
+  const userMsg = message;
+
   try {
-   const hfRes = await axios.post(
-     'https://api-inference.huggingface.co/pipeline/chat/facebook/blenderbot-400M-distill',
-     {
-       inputs: [
-         { role: 'system', content: 'You are a helpful assistant.' },
-         { role: 'user',   content: message }
-       ]
-     },
+    const hfRes = await axios.post(
+      'https://api-inference.huggingface.co/pipeline/chat/stabilityai/stablelm-base-alpha-3b',
+      {
+        inputs: [
+          { role: 'system',  content: 'You are a helpful assistant.' },
+          { role: 'user',    content: userMsg }
+        ]
+      },
       {
         headers: {
           Authorization: `Bearer ${process.env.HF_TOKEN}`,
@@ -23,7 +25,8 @@ router.post('/', async (req, res) => {
         timeout: 60000
       }
     );
-   const reply = (hfRes.data.generated_text || hfRes.data[0]?.generated_text || '').trim();
+
+    const reply = (hfRes.data.generated_text || '').trim();
     return res.json({ reply });
 
   } catch (err) {
@@ -32,7 +35,7 @@ router.post('/', async (req, res) => {
       data: err.response?.data || err.message
     });
     if (err.response?.status === 503) {
-      return res.json({ reply: 'Сервис временно недоступен, попробуйте чуть позже.' });
+      return res.json({ reply: 'Сервис сейчас перегружен, попробуйте чуть позже.' });
     }
     return res.status(500).json({ error: 'AI service error' });
   }
