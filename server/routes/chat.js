@@ -10,12 +10,14 @@ router.post('/', async (req, res) => {
 
   try {
     const hfRes = await axios.post(
-      'https://api-inference.huggingface.co/pipeline/chat/stabilityai/stablelm-base-alpha-3b',
+      'https://api-inference.huggingface.co/models/google/flan-t5-small',
       {
-        inputs: [
-          { role: 'system',  content: 'You are a helpful assistant.' },
-          { role: 'user',    content: userMsg }
-        ]
+        inputs: prompt,
+        parameters: {
+          temperature: 0.3,
+          top_p: 0.9,
+          max_new_tokens: 100
+        }
       },
       {
         headers: {
