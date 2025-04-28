@@ -2,23 +2,24 @@ import { Router } from 'express';
 import axios from 'axios';
 
 const router = Router();
-
 const HF_TOKEN = process.env.HF_API_TOKEN;
+if (!HF_TOKEN) throw new Error('HF_API_TOKEN не задан в .env');
+
 const HEADERS = {
   Authorization: `Bearer ${HF_TOKEN}`,
-  'Content-Type': 'application/json',
-  'x-wait-for-model': 'true'
+  'Content-Type': 'application/json'
 };
 const TIMEOUT = 60000;
 
-async function queryWithRetries(fn, retries = 2) {
+async function withRetry(fn, retries = 2) {
   for (let i = 0; i <= retries; i++) {
     try {
       return await fn();
     } catch (err) {
-      if (err.response?.status === 503 && i < retries) {
-        console.warn(`503 from HF, retry ${i + 1}/${retries}…`);
-        await new Promise(r => setTimeout(r, 1000));
+      const status = err.response?.status;
+      if (status === 503 && i < retries) {
+        console.warn(`503, retrying ${i+1}/${retries}…`);
+        await new Promise(res => setTimeout(res, 1000));
         continue;
       }
       throw err;
@@ -30,45 +31,42 @@ router.post('/', async (req, res) => {
   const { message } = req.body;
 
   try {
-    const llamaRes = await queryWithRetries(() =>
+    const dRes = await withRetry(() =>
       axios.post(
-        'https://api-inference.huggingface.co/models/meta-llama/Llama-2-7b-chat-hf',
+        'https://api-inference.huggingface.co/models/microsoft/DialoGPT-small',
         { inputs: message },
         { headers: HEADERS, timeout: TIMEOUT }
       )
     );
-
-    const reply = llamaRes.data[0]?.generated_text?.trim();
-    if (reply) {
-      return res.json({ reply });
+    const dReply = dRes.data[0]?.generated_text?.trim();
+    if (dReply) {
+      return res.json({ reply: dReply });
     }
   } catch (err) {
-    console.warn('Llama-2-7b-chat-hf failed:', err.response?.status);
+    console.warn('DialoGPT-small failed:', err.response?.status);
   }
 
   try {
-    const bbRes = await queryWithRetries(() =>
+    const fRes = await withRetry(() =>
       axios.post(
-        'https://api-inference.huggingface.co/pipeline/chat/facebook/blenderbot-400M-distill',
+        'https://api-inference.huggingface.co/models/google/flan-t5-small',
         {
-          inputs: [
-            { role: 'system',    content: 'You are a helpful, friendly assistant.' },
-            { role: 'user',      content: message }
-          ]
+          inputs: `You are a helpful assistant.\nUser: ${message}\nAssistant:`,
+          parameters: { temperature: 0.3, top_p: 0.9, max_new_tokens: 100 }
         },
         { headers: HEADERS, timeout: TIMEOUT }
       )
     );
-    const reply2 = bbRes.data.generated_text?.trim();
-    if (reply2) {
-      return res.json({ reply: reply2 });
+    const fReply = fRes.data[0]?.generated_text?.trim();
+    if (fReply) {
+      return res.json({ reply: fReply });
     }
   } catch (err) {
-    console.error('BlenderBot fallback failed:', err.response?.status);
+    console.warn('Flan-T5-small failed:', err.response?.status);
   }
 
   return res.json({
-    reply: 'Извините, сейчас сервис перегружен — попробуйте чуть позже.'
+    reply: 'Unfortunately, the service is currently overloaded. Try again later.'
   });
 });
 
