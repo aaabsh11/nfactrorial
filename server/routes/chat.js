@@ -1,37 +1,42 @@
+// server/routes/chat.js
 import { Router } from 'express';
 import axios from 'axios';
 
 const router = Router();
 
+// Убедитесь, что в Render/Env Vars задан HF_TOKEN=hf_...
 const HF_TOKEN = process.env.HF_TOKEN;
 if (!HF_TOKEN) {
-  throw new Error('HF_TOKEN не задан. Установите его в .env');
+  throw new Error('HF_TOKEN не задан в переменных окружения.');
 }
 
-const PIPELINE_URL =
-  'https://api-inference.huggingface.co/pipeline/conversational/microsoft/DialoGPT-small';
+const MODEL_URL = 'https://api-inference.huggingface.co/models/distilgpt2';
 const HEADERS = {
   Authorization: `Bearer ${HF_TOKEN}`,
   'Content-Type': 'application/json',
-  'x-wait-for-model': 'true'   
+  // Ждём загрузки модели вместо мгновенного 503
+  'x-wait-for-model': 'true'
 };
 const TIMEOUT = 60000;
 
-async function queryWithRetry(body, retries = 2) {
-  for (let i = 0; i <= retries; i++) {
-    try {
-      return await axios.post(PIPELINE_URL, body, {
-        headers: HEADERS,
-        timeout: TIMEOUT
-      });
-    } catch (err) {
-      if (err.response?.status === 503 && i < retries) {
-        console.warn(`503, retry ${i + 1}/${retries}…`);
-        await new Promise(r => setTimeout(r, 1000));
-        continue;
-      }
-      throw err;
+// Простая функция с одной повторной попыткой при 503
+async function queryWithRetry(prompt) {
+  try {
+    return await axios.post(
+      MODEL_URL,
+      { inputs: prompt },
+      { headers: HEADERS, timeout: TIMEOUT }
+    );
+  } catch (err) {
+    if (err.response?.status === 503) {
+      // повторяем один раз
+      return await axios.post(
+        MODEL_URL,
+        { inputs: prompt },
+        { headers: HEADERS, timeout: TIMEOUT }
+      );
     }
+    throw err;
   }
 }
 
@@ -39,28 +44,19 @@ router.post('/', async (req, res) => {
   const { message } = req.body;
   if (!message) return res.status(400).json({ error: 'message required' });
 
-  const body = {
-    inputs: {
-      past_user_inputs: [],        
-      generated_responses: [],     
-      text: message                
-    }
-  };
+  // Просто передаём сообщение как промпт:
+  const prompt = message;
 
   try {
-    const hfRes = await queryWithRetry(body);
-    const reply = hfRes.data[0]?.generated_text?.trim();
-    if (reply) {
-      return res.json({ reply });
-    } else {
-      throw new Error('empty reply');
-    }
+    const hfRes = await queryWithRetry(prompt);
+    // Ответ приходит в data[0].generated_text
+    const raw = hfRes.data[0]?.generated_text || '';
+    // Обрезаем оригинальный prompt, оставляем только сгенерированное
+    const reply = raw.startsWith(prompt) ? raw.slice(prompt.length).trim() : raw.trim();
+    return res.json({ reply: reply || '...' });
   } catch (err) {
-    console.error('HuggingFace error', err.response?.status, err.response?.data || err.message);
- 
-    return res.json({
-      reply: 'Sorry, the service is temporarily unavailable. Try again later.'
-    });
+    console.error('HuggingFace error', err.response?.status, err.message);
+    return res.json({ reply: 'Извините, сейчас не могу ответить.' });
   }
 });
 
