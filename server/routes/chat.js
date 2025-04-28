@@ -2,19 +2,18 @@ import { Router } from 'express';
 import axios from 'axios';
 
 const router = Router();
-const HF_TOKEN = process.env.HF_TOKEN;
 const HEADERS = {
-  Authorization: `Bearer ${HF_TOKEN}`,
+  Authorization: `Bearer ${process.env.HF_TOKEN}`,
   'Content-Type': 'application/json'
 };
 const TIMEOUT = 60000;
 
-async function queryWithRetries(fn, retries = 2) {
-  for (let i = 0; i <= retries; i++) {
+async function withRetry(fn, attempts = 2) {
+  for (let i = 0; i <= attempts; i++) {
     try {
       return await fn();
     } catch (err) {
-      if (err.response?.status === 503 && i < retries) {
+      if (err.response?.status === 503 && i < attempts) {
         await new Promise(r => setTimeout(r, 1000));
         continue;
       }
@@ -25,52 +24,51 @@ async function queryWithRetries(fn, retries = 2) {
 
 router.post('/', async (req, res) => {
   const { message } = req.body;
-  const prompt =
-    "You are a helpful assistant. Answer the user clearly and concisely.\n\nUser: " +
-    message +
-    "\nAssistant:";
 
   try {
-    const hfRes = await queryWithRetries(() =>
+    const stableRes = await withRetry(() =>
       axios.post(
-        'https://api-inference.huggingface.co/models/google/flan-t5-base',
-        {
-          inputs: prompt,
-          parameters: { temperature: 0.3, top_p: 0.9, max_new_tokens: 150 }
-        },
-        { headers: HEADERS, timeout: TIMEOUT }
-      )
-    );
-    const reply =
-      hfRes.data.generated_text ||
-      hfRes.data[0]?.generated_text ||
-      '';
-    if (reply) return res.json({ reply: reply.trim() });
-  } catch (err) {
-    console.warn('flan-t5-base failed:', err.response?.status);
-  }
-
-  try {
-    const hfRes2 = await queryWithRetries(() =>
-      axios.post(
-        'https://api-inference.huggingface.co/pipeline/chat/facebook/blenderbot-400M-distill',
+        'https://api-inference.huggingface.co/pipeline/chat/stabilityai/stablelm-base-alpha-3b',
         {
           inputs: [
-            { role: 'system', content: 'You are a helpful assistant.' },
-            { role: 'user', content: message }
+            { role: 'system', content: 'You are a helpful, friendly assistant.' },
+            { role: 'user',   content: message }
           ]
         },
         { headers: HEADERS, timeout: TIMEOUT }
       )
     );
-    const reply2 = hfRes2.data.generated_text || '';
-    if (reply2) return res.json({ reply: reply2.trim() });
+    const reply = stableRes.data.generated_text?.trim();
+    if (reply) {
+      return res.json({ reply });
+    }
+  } catch (err) {
+    console.warn('StableLM chat failed:', err.response?.status);
+  }
+
+  try {
+    const bbRes = await withRetry(() =>
+      axios.post(
+        'https://api-inference.huggingface.co/pipeline/chat/facebook/blenderbot-400M-distill',
+        {
+          inputs: [
+            { role: 'system', content: 'You are a helpful, friendly assistant.' },
+            { role: 'user',   content: message }
+          ]
+        },
+        { headers: HEADERS, timeout: TIMEOUT }
+      )
+    );
+    const reply2 = bbRes.data.generated_text?.trim();
+    if (reply2) {
+      return res.json({ reply: reply2 });
+    }
   } catch (err) {
     console.error('BlenderBot fallback failed:', err.response?.status);
   }
 
   return res.json({
-    reply: 'Sorry, the service is currently unavailable. Please try again later.'
+    reply: 'К сожалению, сейчас все модели перегружены. Попробуйте чуть позже.'
   });
 });
 
