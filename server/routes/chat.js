@@ -8,7 +8,7 @@ if (!HF_TOKEN) throw new Error('HF_TOKEN не задан в .env');
 const BASE_HEADERS = {
   Authorization: `Bearer ${HF_TOKEN}`,
   'Content-Type': 'application/json',
-  'x-wait-for-model': 'true'   
+  'x-wait-for-model': 'true'  
 };
 const TIMEOUT = 60000;
 
@@ -31,49 +31,28 @@ router.post('/', async (req, res) => {
   const { message } = req.body;
 
   try {
-    const llamaRes = await withRetry(() =>
-      axios.post(
-        'https://api-inference.huggingface.co/pipeline/chat/meta-llama/Llama-2-7b-chat-hf',
-        {
-          inputs: [
-            { role: 'system',    content: 'You are a helpful, friendly assistant.' },
-            { role: 'user',      content: message }
-          ]
-        },
-        { headers: BASE_HEADERS, timeout: TIMEOUT }
-      )
-    );
-    const reply = llamaRes.data.generated_text?.trim();
-    if (reply) {
-      return res.json({ reply });
-    }
-  } catch (err) {
-    console.warn('Llama-2 Chat failed:', err.response?.status);
-  }
-
-  try {
-    const bbRes = await withRetry(() =>
+    const resp = await withRetry(() =>
       axios.post(
         'https://api-inference.huggingface.co/pipeline/chat/facebook/blenderbot-400M-distill',
         {
           inputs: [
-            { role: 'system', content: 'You are a helpful, friendly assistant.' },
-            { role: 'user',   content: message }
+            { role: 'system',  content: 'You are a helpful, friendly assistant.' },
+            { role: 'user',    content: message }
           ]
         },
         { headers: BASE_HEADERS, timeout: TIMEOUT }
       )
     );
-    const reply2 = bbRes.data.generated_text?.trim();
-    if (reply2) {
-      return res.json({ reply: reply2 });
+    const reply = resp.data.generated_text?.trim();
+    if (reply) {
+      return res.json({ reply });
     }
   } catch (err) {
-    console.warn('BlenderBot fallback failed:', err.response?.status);
+    console.error('BlenderBot failed:', err.response?.status);
   }
 
   return res.json({
-    reply: 'К сожалению, сейчас сервис перегружен — попробуйте чуть позже.'
+    reply: 'Sorry, the service is currently unavailable. Please try again later.'
   });
 });
 
