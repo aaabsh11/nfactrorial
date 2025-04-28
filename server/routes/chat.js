@@ -1,9 +1,8 @@
-// server/routes/chat.js
 import { Router } from 'express';
 import axios from 'axios';
 
 const router = Router();
-const HF_TOKEN = process.env.HF_TOKEN;
+const HF_TOKEN = process.env.HF_API_TOKEN;
 if (!HF_TOKEN) throw new Error('HF_API_TOKEN не задан в .env');
 
 const HEADERS = {
@@ -12,7 +11,6 @@ const HEADERS = {
 };
 const TIMEOUT = 60000;
 
-// Попытка fn() до retries раз при 503
 async function withRetry(fn, retries = 2) {
   for (let i = 0; i <= retries; i++) {
     try {
@@ -32,7 +30,6 @@ async function withRetry(fn, retries = 2) {
 router.post('/', async (req, res) => {
   const { message } = req.body;
 
-  // 1) Основная: DialoGPT-small
   try {
     const dRes = await withRetry(() =>
       axios.post(
@@ -49,7 +46,6 @@ router.post('/', async (req, res) => {
     console.warn('DialoGPT-small failed:', err.response?.status);
   }
 
-  // 2) Фоллбэк: Flan-T5-small
   try {
     const fRes = await withRetry(() =>
       axios.post(
@@ -69,9 +65,8 @@ router.post('/', async (req, res) => {
     console.warn('Flan-T5-small failed:', err.response?.status);
   }
 
-  // 3) Если обе модели упали — понятный ответ
   return res.json({
-    reply: 'К сожалению, сейчас сервис перегружен. Попробуйте чуть позже.'
+    reply: 'Unfortunately, the service is currently overloaded. Try again later.'
   });
 });
 
