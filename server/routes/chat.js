@@ -4,11 +4,10 @@ import axios from 'axios';
 const router = Router();
 
 const HF_TOKEN = process.env.HF_TOKEN;
-if (!HF_TOKEN) {
-  throw new Error('HF_TOKEN не задан в .env');
-}
+if (!HF_TOKEN) throw new Error('HF_TOKEN не задан в .env');
 
-const MODEL_URL = 'https://api-inference.huggingface.co/models/microsoft/DialoGPT-small';
+const MODEL_URL = 'https://api-inference.huggingface.co/models/facebook/blenderbot_small-90M';
+
 const HEADERS = {
   Authorization: `Bearer ${HF_TOKEN}`,
   'Content-Type': 'application/json',
@@ -22,7 +21,7 @@ async function queryWithRetry(body, retries = 2) {
       return await axios.post(MODEL_URL, body, { headers: HEADERS, timeout: TIMEOUT });
     } catch (err) {
       if (err.response?.status === 503 && i < retries) {
-        console.warn(`HF 503, retry ${i + 1}/${retries}…`);
+        console.warn(`HF 503, повторная попытка ${i + 1}/${retries}…`);
         await new Promise(r => setTimeout(r, 1000));
         continue;
       }
@@ -42,7 +41,7 @@ router.post('/', async (req, res) => {
   } catch (err) {
     console.error('HuggingFace error', err.response?.status, err.message);
     return res.json({
-      reply: 'Sorry, the service is temporarily unavailable. Try again later.'
+      reply: 'Sorry, the service is temporarily unavailable. Please try again in a minute.'
     });
   }
 });
