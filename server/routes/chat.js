@@ -2,18 +2,20 @@ import { Router } from 'express';
 import axios from 'axios';
 
 const router = Router();
-const HF_OPTIONS = {
-  headers: { Authorization: `Bearer ${process.env.HF_TOKEN}` },
-  timeout: 60000
+const HF_TOKEN = process.env.HF_TOKEN;
+const HEADERS = {
+  Authorization: `Bearer ${HF_TOKEN}`,
+  'Content-Type': 'application/json'
 };
+const TIMEOUT = 60000;
 
-async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-async function queryWithRetries(url, body, retries = 2) {
+async function queryWithRetries(fn, retries = 2) {
   for (let i = 0; i <= retries; i++) {
-    try { return await axios.post(url, body, HF_OPTIONS); }
-    catch (err) {
+    try {
+      return await fn();
+    } catch (err) {
       if (err.response?.status === 503 && i < retries) {
-        await sleep(1000);
+        await new Promise(r => setTimeout(r, 1000));
         continue;
       }
       throw err;
@@ -23,41 +25,52 @@ async function queryWithRetries(url, body, retries = 2) {
 
 router.post('/', async (req, res) => {
   const { message } = req.body;
+  const prompt =
+    "You are a helpful assistant. Answer the user clearly and concisely.\n\nUser: " +
+    message +
+    "\nAssistant:";
 
   try {
-    const hfRes = await queryWithRetries(
-      'https://api-inference.huggingface.co/pipeline/chat/google/flan-t5-base',
-      {
-        inputs: [
-          { role: 'system',  content: 'You are a helpful, friendly assistant.' },
-          { role: 'user',    content: message }
-        ]
-      }
+    const hfRes = await queryWithRetries(() =>
+      axios.post(
+        'https://api-inference.huggingface.co/models/google/flan-t5-base',
+        {
+          inputs: prompt,
+          parameters: { temperature: 0.3, top_p: 0.9, max_new_tokens: 150 }
+        },
+        { headers: HEADERS, timeout: TIMEOUT }
+      )
     );
-    const reply = hfRes.data.generated_text?.trim();
-    if (reply) return res.json({ reply });
+    const reply =
+      hfRes.data.generated_text ||
+      hfRes.data[0]?.generated_text ||
+      '';
+    if (reply) return res.json({ reply: reply.trim() });
   } catch (err) {
     console.warn('flan-t5-base failed:', err.response?.status);
   }
 
   try {
-    const hfRes2 = await queryWithRetries(
-      'https://api-inference.huggingface.co/pipeline/chat/stabilityai/stablelm-base-alpha-3b',
-      {
-        inputs: [
-          { role: 'system', content: 'You are a helpful, friendly assistant.' },
-          { role: 'user',   content: message }
-        ]
-      }
+    const hfRes2 = await queryWithRetries(() =>
+      axios.post(
+        'https://api-inference.huggingface.co/pipeline/chat/facebook/blenderbot-400M-distill',
+        {
+          inputs: [
+            { role: 'system', content: 'You are a helpful assistant.' },
+            { role: 'user', content: message }
+          ]
+        },
+        { headers: HEADERS, timeout: TIMEOUT }
+      )
     );
-    const reply2 = hfRes2.data.generated_text?.trim();
-    if (reply2) return res.json({ reply: reply2 });
+    const reply2 = hfRes2.data.generated_text || '';
+    if (reply2) return res.json({ reply: reply2.trim() });
   } catch (err) {
-    console.error('stablelm-base-alpha-3b failed:', err.response?.status);
+    console.error('BlenderBot fallback failed:', err.response?.status);
   }
 
   return res.json({
-    reply: 'Unfortunately, the service is currently overloaded - please try again later.'
+    reply: 'Sorry, the service is currently unavailable. Please try again later.'
   });
 });
 
