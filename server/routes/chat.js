@@ -2,7 +2,7 @@ import { Router } from 'express';
 import axios from 'axios';
 
 const router = Router();
-const HF_TOKEN = process.env.HF_API_TOKEN;
+const HF_TOKEN = process.env.HF_TOKEN;
 if (!HF_TOKEN) throw new Error('HF_API_TOKEN не задан в .env');
 
 const HEADERS = {
